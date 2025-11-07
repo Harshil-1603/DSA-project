@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cmath>
 #include <ctime>
+#include <fstream>
 #include <future>
 #include <iomanip>
 #include <iostream>
@@ -50,6 +51,31 @@ namespace route_finder
     {
 
         using json = nlohmann::json;
+
+        constexpr const char *CACHE_FILE_NAME = "osm_cache.json";
+
+        // Global diagnostic tracking variables
+        struct DiagnosticTimings
+        {
+            long long fetch_overpass_ms = 0;
+            long long build_graph_ms = 0;
+            long long compute_components_ms = 0;
+            long long build_kdtree_ms = 0;
+            long long dijkstra_precompute_ms = 0;
+            long long snap_students_ms = 0;
+            long long allotment_ms = 0;
+        } g_timings;
+
+        struct GraphStats
+        {
+            std::string detail_setting;
+            int nodes_total = 0;
+            int edges_directed = 0;
+            int oneway_edges = 0;
+            int component_count = 0;
+            int main_component_id = -1;
+            int main_component_nodes = 0;
+        } g_graph_stats;
 
         void build_kdtree_for_graph()
         {
@@ -300,6 +326,121 @@ namespace route_finder
                 {"large_snap_count", large_snap_count},
                 {"avg_snap_distance_m", snap_count > 0 ? snap_distance_sum / snap_count : 0.0}};
 
+            // Performance Summary
+            diagnostic_report["performance_summary"] = {
+                {"time_fetch_overpass_ms", g_timings.fetch_overpass_ms},
+                {"time_build_graph_ms", g_timings.build_graph_ms},
+                {"time_compute_components_ms", g_timings.compute_components_ms},
+                {"time_build_kdtree_ms", g_timings.build_kdtree_ms},
+                {"time_dijkstra_precompute_ms", g_timings.dijkstra_precompute_ms},
+                {"time_snap_students_ms", g_timings.snap_students_ms},
+                {"time_allotment_ms", g_timings.allotment_ms},
+                {"time_total_ms", g_timings.fetch_overpass_ms + g_timings.build_graph_ms +
+                                      g_timings.compute_components_ms + g_timings.build_kdtree_ms +
+                                      g_timings.dijkstra_precompute_ms + g_timings.snap_students_ms +
+                                      g_timings.allotment_ms}};
+
+            // Allotment Quality Report
+            int total_assigned = final_assignments.size();
+            int total_unassigned = students.size() - total_assigned;
+            double total_travel_time_sec = 0.0;
+            double max_travel_time_sec = 0.0;
+            int first_choice_count = 0;
+
+            // By-category stats
+            std::map<std::string, int> cat_total, cat_assigned;
+            std::map<std::string, double> cat_travel_sum;
+
+            for (const auto &student : students)
+            {
+                cat_total[student.category]++;
+            }
+
+            for (const auto &student : students)
+            {
+                const auto it = final_assignments.find(student.student_id);
+                if (it != final_assignments.end())
+                {
+                    const std::string &assigned_centre_id = it->second;
+                    cat_assigned[student.category]++;
+
+                    // Get travel time
+                    double travel_time_sec = 0.0;
+                    const auto lookup_it = allotment_lookup_map.find(student.snapped_node_id);
+                    if (lookup_it != allotment_lookup_map.end())
+                    {
+                        const auto entry_it = lookup_it->second.find(assigned_centre_id);
+                        if (entry_it != lookup_it->second.end())
+                        {
+                            travel_time_sec = entry_it->second;
+                        }
+                    }
+
+                    total_travel_time_sec += travel_time_sec;
+                    cat_travel_sum[student.category] += travel_time_sec;
+                    if (travel_time_sec > max_travel_time_sec)
+                    {
+                        max_travel_time_sec = travel_time_sec;
+                    }
+
+                    // Check if first choice (minimum distance to any centre)
+                    double min_distance = std::numeric_limits<double>::max();
+                    for (const auto &centre : centres)
+                    {
+                        const auto lookup_it2 = allotment_lookup_map.find(student.snapped_node_id);
+                        if (lookup_it2 != allotment_lookup_map.end())
+                        {
+                            const auto entry_it2 = lookup_it2->second.find(centre.centre_id);
+                            if (entry_it2 != lookup_it2->second.end())
+                            {
+                                if (entry_it2->second < min_distance)
+                                {
+                                    min_distance = entry_it2->second;
+                                }
+                            }
+                        }
+                    }
+                    if (travel_time_sec <= min_distance + 0.1) // tolerance for floating point
+                    {
+                        first_choice_count++;
+                    }
+                }
+            }
+
+            json by_category = json::array();
+            for (const auto &[cat, total] : cat_total)
+            {
+                int assigned = cat_assigned[cat];
+                double avg_travel = (assigned > 0) ? (cat_travel_sum[cat] / assigned) : 0.0;
+                by_category.push_back({{"category", cat},
+                                       {"total", total},
+                                       {"assigned", assigned},
+                                       {"unassigned", total - assigned},
+                                       {"avg_travel_time_sec", avg_travel}});
+            }
+
+            diagnostic_report["allotment_quality_report"] = {
+                {"total_students", (int)students.size()},
+                {"total_assigned", total_assigned},
+                {"total_unassigned_final", total_unassigned},
+                {"total_travel_time_sec", total_travel_time_sec},
+                {"avg_travel_time_sec", total_assigned > 0 ? total_travel_time_sec / total_assigned : 0.0},
+                {"max_travel_time_sec", max_travel_time_sec},
+                {"first_choice_assignments", first_choice_count},
+                {"fallback_assignments", total_assigned - first_choice_count},
+                {"by_category", by_category}};
+
+            // Graph Summary
+            diagnostic_report["graph_summary"] = {
+                {"graph_detail_setting", g_graph_stats.detail_setting},
+                {"nodes_count_total", g_graph_stats.nodes_total},
+                {"edges_count_directed", g_graph_stats.edges_directed},
+                {"oneway_edges_count", g_graph_stats.oneway_edges},
+                {"component_count", g_graph_stats.component_count},
+                {"main_component_id", g_graph_stats.main_component_id},
+                {"main_component_nodes", g_graph_stats.main_component_nodes},
+                {"isolated_nodes_count", g_graph_stats.nodes_total - g_graph_stats.main_component_nodes}};
+
             return diagnostic_report;
         }
 
@@ -346,6 +487,7 @@ int main()
             const double max_lat = body.value("max_lat", 27.0);
             const double max_lon = body.value("max_lon", 74.0);
             const std::string detail = body.value("graph_detail", "medium");
+            const bool use_cache = body.value("use_cache", false);
 
             centres.clear();
             if (body.contains("centres") && body["centres"].is_array())
@@ -370,9 +512,97 @@ int main()
                 }
             }
 
-            const auto fetch_start = std::chrono::high_resolution_clock::now();
-            const std::string osm_payload = fetch_overpass_data(min_lat, min_lon, max_lat, max_lon, detail);
-            const auto fetch_end = std::chrono::high_resolution_clock::now();
+            std::string osm_payload;
+            long long fetch_ms = 0;
+            bool cache_valid = false;
+
+            // --- CACHING LOGIC WITH VALIDATION ---
+            std::ifstream cache_file(CACHE_FILE_NAME);
+            if (use_cache && cache_file.good())
+            {
+                std::stringstream buffer;
+                buffer << cache_file.rdbuf();
+                cache_file.close();
+                
+                try
+                {
+                    json cached_data = json::parse(buffer.str());
+                    
+                    // Validate cache metadata
+                    if (cached_data.contains("metadata"))
+                    {
+                        const auto &meta = cached_data["metadata"];
+                        const double cached_min_lat = meta.value("min_lat", 0.0);
+                        const double cached_min_lon = meta.value("min_lon", 0.0);
+                        const double cached_max_lat = meta.value("max_lat", 0.0);
+                        const double cached_max_lon = meta.value("max_lon", 0.0);
+                        const std::string cached_detail = meta.value("graph_detail", "");
+                        
+                        // Check if bounds and detail match (with small tolerance for floating point)
+                        const double tolerance = 0.0001;
+                        if (std::abs(cached_min_lat - min_lat) < tolerance &&
+                            std::abs(cached_min_lon - min_lon) < tolerance &&
+                            std::abs(cached_max_lat - max_lat) < tolerance &&
+                            std::abs(cached_max_lon - max_lon) < tolerance &&
+                            cached_detail == detail)
+                        {
+                            cache_valid = true;
+                            osm_payload = cached_data["osm_data"].dump();
+                            std::cout << "🚀 CACHE HIT: Re-using data from '" << CACHE_FILE_NAME << "' (bounds and detail match)" << std::endl;
+                        }
+                        else
+                        {
+                            std::cout << "⚠️  CACHE INVALID: Bounds or detail mismatch. Fetching fresh data..." << std::endl;
+                        }
+                    }
+                    else
+                    {
+                        std::cout << "⚠️  CACHE INVALID: No metadata found. Fetching fresh data..." << std::endl;
+                    }
+                }
+                catch (const std::exception &e)
+                {
+                    std::cout << "⚠️  CACHE ERROR: Failed to parse cache file. Fetching fresh data..." << std::endl;
+                }
+            }
+            
+            if (!cache_valid)
+            {
+                if (use_cache && cache_file.good())
+                {
+                    std::cout << "📡 Fetching from Overpass API..." << std::endl;
+                }
+                else if (use_cache)
+                {
+                    std::cout << "⚠️  CACHE MISS: Cache file not found. Fetching from API..." << std::endl;
+                }
+
+                const auto fetch_start = std::chrono::high_resolution_clock::now();
+                osm_payload = fetch_overpass_data(min_lat, min_lon, max_lat, max_lon, detail);
+                const auto fetch_end = std::chrono::high_resolution_clock::now();
+                fetch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(fetch_end - fetch_start).count();
+
+                // Save to cache with metadata
+                json cache_object;
+                cache_object["metadata"] = {
+                    {"min_lat", min_lat},
+                    {"min_lon", min_lon},
+                    {"max_lat", max_lat},
+                    {"max_lon", max_lon},
+                    {"graph_detail", detail},
+                    {"timestamp", std::time(nullptr)}
+                };
+                cache_object["osm_data"] = json::parse(osm_payload);
+                
+                std::ofstream out_cache(CACHE_FILE_NAME);
+                if (out_cache.good())
+                {
+                    out_cache << cache_object.dump();
+                    out_cache.close();
+                    std::cout << "💾 CACHE WRITE: Saved new data to '" << CACHE_FILE_NAME << "' with metadata" << std::endl;
+                }
+            }
+            // --- END CACHING LOGIC ---
 
             json osm_data = json::parse(osm_payload);
 
@@ -387,7 +617,9 @@ int main()
             }
 
             // Compute connected components to identify main component
+            const auto comp_start = std::chrono::high_resolution_clock::now();
             compute_connected_components();
+            const auto comp_end = std::chrono::high_resolution_clock::now();
 
             const auto kd_start = std::chrono::high_resolution_clock::now();
             build_kdtree_for_graph();
@@ -398,19 +630,54 @@ int main()
             build_allotment_lookup();
             const auto dijkstra_end = std::chrono::high_resolution_clock::now();
 
-            const auto fetch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(fetch_end - fetch_start).count();
             const auto build_ms = std::chrono::duration_cast<std::chrono::milliseconds>(build_end - build_start).count();
+            const auto comp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(comp_end - comp_start).count();
             const auto kd_ms = std::chrono::duration_cast<std::chrono::milliseconds>(kd_end - kd_start).count();
             const auto dijkstra_ms = std::chrono::duration_cast<std::chrono::milliseconds>(dijkstra_end - dijkstra_start).count();
 
-            json response;
-            response["status"] = "success";
-            response["nodes_count"] = nodes.size();
+            // Store timing for diagnostics
+            g_timings.fetch_overpass_ms = fetch_ms;
+            g_timings.build_graph_ms = build_ms;
+            g_timings.compute_components_ms = comp_ms;
+            g_timings.build_kdtree_ms = kd_ms;
+            g_timings.dijkstra_precompute_ms = dijkstra_ms;
+
+            // Store graph stats for diagnostics
+            g_graph_stats.detail_setting = detail;
+            g_graph_stats.nodes_total = static_cast<int>(nodes.size());
+            
             size_t edge_total = 0;
             for (const auto &entry : graph)
             {
                 edge_total += entry.second.size();
             }
+            g_graph_stats.edges_directed = static_cast<int>(edge_total);
+            
+            // Calculate main component
+            std::unordered_map<int, int> comp_counts;
+            for (const auto &[node_id, comp_id] : node_component)
+            {
+                if (comp_id > 0)
+                {
+                    comp_counts[comp_id]++;
+                }
+            }
+            g_graph_stats.component_count = static_cast<int>(comp_counts.size());
+            
+            int max_comp_size = 0;
+            for (const auto &[comp_id, count] : comp_counts)
+            {
+                if (count > max_comp_size)
+                {
+                    max_comp_size = count;
+                    g_graph_stats.main_component_id = comp_id;
+                    g_graph_stats.main_component_nodes = count;
+                }
+            }
+
+            json response;
+            response["status"] = "success";
+            response["nodes_count"] = nodes.size();
             response["edges_count"] = edge_total;
             response["timing"] = {
                 {"fetch_overpass_ms", fetch_ms},
@@ -460,6 +727,10 @@ int main()
             const auto snap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(snap_end - snap_start).count();
             const auto allot_ms = std::chrono::duration_cast<std::chrono::milliseconds>(allot_end - allot_start).count();
             const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(total_end - total_start).count();
+
+            // Store timing for diagnostics
+            g_timings.snap_students_ms = snap_ms;
+            g_timings.allotment_ms = allot_ms;
 
             json response;
             response["status"] = "success";

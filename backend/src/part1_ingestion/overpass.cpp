@@ -15,13 +15,13 @@ namespace route_finder
             ((std::string *)userp)->append((char *)contents, size * nmemb);
             return size * nmemb;
         }
-    } // namespace
+    } 
 
     std::string fetch_overpass_data(double min_lat, double min_lon, double max_lat, double max_lon, const std::string &graph_detail)
     {
         std::cout << "Fetching OSM data from Overpass API (detail=" << graph_detail << ")..." << std::endl;
 
-        // Determine highway types based on detail level (matching main.cpp format)
+        // highway types
         std::string highway_types;
         if (graph_detail == "low")
         {
@@ -33,25 +33,25 @@ namespace route_finder
             highway_types = "motorway|trunk|primary|secondary|tertiary|residential|living_street|service|unclassified";
             std::cout << "📈 High detail: All roads (most accurate)" << std::endl;
         }
-        else // medium (default)
+        else 
         {
             highway_types = "primary|secondary|tertiary|residential|living_street|service|unclassified";
             std::cout << "📊 Medium detail: Most roads (balanced)" << std::endl;
         }
 
-        // Build Overpass QL query - OPTIMIZED with bbox and compact format
+        //overpass query
         std::ostringstream query;
-        query << std::fixed << std::setprecision(6); // Reduce precision for smaller query
+        query << std::fixed << std::setprecision(6); 
         query << "[out:json][timeout:60][bbox:"
               << min_lat << "," << min_lon << "," << max_lat << "," << max_lon << "];";
         query << "way[highway~\"^(" << highway_types << ")$\"];";
-        query << "(._;>;);"; // Compact way to get ways and their nodes
+        query << "(._;>;);"; 
         query << "out body;";
 
         std::string query_str = query.str();
         std::cout << "Query: " << query_str << std::endl;
 
-        // Initialize CURL
+        //curl
         CURL *curl = curl_easy_init();
         if (!curl)
         {
@@ -61,7 +61,6 @@ namespace route_finder
 
         std::string response_data;
 
-        // Try overpass-api.de FIRST (fastest server, matching main.cpp)
         const char *base_urls[] = {
             "https://overpass-api.de/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter"};
@@ -71,7 +70,6 @@ namespace route_finder
         {
             response_data.clear();
 
-            // Use GET request with URL encoding (FASTER than POST)
             char *encoded_query = curl_easy_escape(curl, query_str.c_str(), query_str.length());
             std::string url = std::string(base_url) + "?data=" + std::string(encoded_query);
             curl_free(encoded_query);
@@ -118,4 +116,4 @@ namespace route_finder
         return response_data;
     }
 
-} // namespace route_finder
+} 

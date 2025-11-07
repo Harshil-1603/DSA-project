@@ -340,9 +340,19 @@
               <option value="high">High (Accurate - All roads)</option>
             </select>
           </div>
+          <div class="input-group" style="margin-top: 10px">
+            <input
+              type="checkbox"
+              id="useCacheToggle"
+              style="width: auto; margin-right: 8px"
+            />
+            <label for="useCacheToggle" style="cursor: pointer"
+              >Use Local Map Cache (osm_cache.json), for fast fetching</label
+            >
+          </div>
           <div class="info-box" style="margin-top: 8px">
             Lower detail means faster graph building & allotment, but less
-            accurate routes
+            accurate routes. Cache allows instant offline testing.
           </div>
           <button
             class="btn btn-primary"
@@ -385,7 +395,7 @@
             disabled
             style="margin-top: 10px"
           >
-            Export Diagnostics (JSON)
+            Export stats report (JSON)
           </button>
         </div>
 

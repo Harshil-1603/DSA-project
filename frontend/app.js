@@ -152,6 +152,7 @@ async function buildGraph() {
   try {
     const bounds = map.getBounds();
     const graphDetail = document.getElementById("graphDetail").value;
+    const useCache = document.getElementById("useCacheToggle").checked;
 
     const payload = {
       min_lat: bounds.getSouth(),
@@ -160,6 +161,7 @@ async function buildGraph() {
       max_lon: bounds.getEast(),
       centres: centres,
       graph_detail: graphDetail,
+      use_cache: useCache,
     };
 
     console.log("Sending build-graph request:", payload);
@@ -564,9 +566,9 @@ function updateStats() {
 
 function updateLegend() {
   const legendList = document.getElementById("legend-list");
-  if (!legendList) return; 
+  if (!legendList) return;
 
-  legendList.innerHTML = ""; 
+  legendList.innerHTML = "";
 
   centres.forEach((centre, index) => {
     const color = centreColors[index % centreColors.length];
@@ -731,7 +733,7 @@ async function testParallelDijkstra() {
             </div>
           </div>
           <div style="margin-top: 10px; font-size: 11px; color: #666;">
-            💡 Tip: Speedup shows how much faster parallel execution is compared to running each centre sequentially.
+            This shows how much faster parallel execution is compared to running each centre sequentially.
           </div>
         </div>
       `;
