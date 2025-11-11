@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Centre Allotter - Dashboard</title>
+
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 20px 30px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      h1 {
+        color: #333;
+        font-size: 28px;
+        font-weight: 600;
+      }
+
+      .subtitle {
+        color: #666;
+        font-size: 14px;
+        margin-top: 5px;
+      }
+
+      .container {
+        flex: 1;
+        display: flex;
+        padding: 20px;
+        gap: 20px;
+        overflow: hidden;
+      }
+
+      .control-panel {
+        width: 320px;
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        overflow-y: auto;
+      }
+
+      .map-container {
+        flex: 1;
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        position: relative;
+      }
+
+      #map {
+        width: 100%;
+        height: 100%;
+      }
+
+      .section {
+        margin-bottom: 25px;
+      }
+
+      .section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #667eea;
+      }
+
+      .btn {
+        width: 100%;
+        padding: 12px 20px;
+        margin-bottom: 10px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      }
+
+      .btn-secondary {
+        background: #e0e7ff;
+        color: #667eea;
+      }
+
+      .btn-secondary:hover {
+        background: #c7d2fe;
+      }
+
+      .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        font-size: 16px;
+        padding: 15px 20px;
+      }
+
+      .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+      }
+
+      .input-group {
+        margin-bottom: 15px;
+      }
+
+      .input-group label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: #555;
+        margin-bottom: 6px;
+      }
+
+      .input-group input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 2px solid #e5e7eb;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.3s ease;
+      }
+
+      .input-group input:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      .stats {
+        background: #f9fafb;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+      }
+
+      .stat-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .stat-label {
+        color: #6b7280;
+        font-weight: 500;
+      }
+
+      .stat-value {
+        color: #111827;
+        font-weight: 700;
+      }
+
+      .loader {
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        background: white;
+        padding: 30px 40px;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        text-align: center;
+      }
+
+      .loader.active {
+        display: block;
+      }
+
+      .spinner {
+        border: 4px solid #f3f4f6;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 15px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .loader-text {
+        color: #333;
+        font-weight: 600;
+      }
+
+      .legend {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .legend-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #333;
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+        font-size: 12px;
+      }
+
+      .legend-color {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        margin-right: 8px;
+        border: 2px solid #333;
+      }
+
+      .info-box {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        padding: 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: #92400e;
+        margin-bottom: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Test Centre Allotter</h1>
+      <p class="subtitle">
+        High-Performance Student-to-Centre Assignment System
+      </p>
+    </header>
+
+    <div class="container">
+      <div class="control-panel">
+        <div class="section">
+          <div class="section-title">Step 1: Setup Centres</div>
+          <div class="info-box">Click on the map to add test centres</div>
+          <div class="input-group">
+            <label>Centre Capacity:</label>
+            <input type="number" id="centreCapacity" value="50" min="1" />
+          </div>
+          <div class="info-box" style="font-size: 12px; margin-top: 10px">
+            ℹAll centres are identical. Students are assigned based on distance
+            and priority tier (Female > PwD > Male).
+          </div>
+          <button class="btn btn-secondary" onclick="clearCentres()">
+            Clear All Centres
+          </button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Step 2: Build Graph</div>
+          <div class="input-group">
+            <label>Graph Detail Level:</label>
+            <select
+              id="graphDetail"
+              style="
+                width: 100%;
+                padding: 8px;
+                border-radius: 6px;
+                border: 1px solid #ddd;
+              "
+            >
+              <option value="low">Low (Fastest - Main roads only)</option>
+              <option value="medium" selected>
+                Medium (Balanced - Most roads)
+              </option>
+              <option value="high">High (Accurate - All roads)</option>
+            </select>
+          </div>
+          <div class="info-box" style="font-size: 11px; margin-top: 8px">
+            Lower detail = faster graph building & allotment, but less accurate
+            routes
+          </div>
+          <button
+            class="btn btn-primary"
+            onclick="buildGraph()"
+            id="buildGraphBtn"
+          >
+            Build Allotment Zones
+          </button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Step 3: Add Students</div>
+          <div class="input-group">
+            <label>Number of Students:</label>
+            <input type="number" id="studentCount" value="100" min="1" />
+          </div>
+          <div class="info-box" style="font-size: 12px; margin-top: 10px">
+            Students will be automatically distributed in a circle around your
+            test centres.
+          </div>
+          <button class="btn btn-secondary" onclick="simulateStudents()">
+            Simulate Students
+          </button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Step 4: Run Allotment</div>
+          <button
+            class="btn btn-success"
+            onclick="runAllotment()"
+            id="runAllotmentBtn"
+            disabled
+          >
+            RUN ALLOTMENT
+          </button>
+          <button
+            class="btn btn-secondary"
+            onclick="exportDiagnostics()"
+            id="exportDiagnosticsBtn"
+            disabled
+            style="margin-top: 10px"
+          >
+            Export Diagnostics (JSON)
+          </button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            ⚡ Performance Test: Parallel Dijkstra
+          </div>
+          <div
+            class="info-box"
+            style="
+              font-size: 12px;
+              background: #fff3cd;
+              border-left-color: #ffc107;
+            "
+          >
+            Test parallel Dijkstra computation from all centres. Compare
+            sequential vs parallel execution times.
+          </div>
+          <button
+            class="btn btn-primary"
+            onclick="testParallelDijkstra()"
+            id="testParallelBtn"
+            disabled
+            style="
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            "
+          >
+            🚀 Test Parallel Dijkstra
+          </button>
+          <div
+            id="parallelResults"
+            style="margin-top: 15px; font-size: 13px"
+          ></div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Statistics</div>
+          <div class="stats">
+            <div class="stat-item">
+              <span class="stat-label">Centres:</span>
+              <span class="stat-value" id="statCentres">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Students:</span>
+              <span class="stat-value" id="statStudents">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Assigned:</span>
+              <span class="stat-value" id="statAssigned">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Graph Nodes:</span>
+              <span class="stat-value" id="statNodes">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Student Categories</div>
+          <div class="stats">
+            <div class="stat-item">
+              <span class="stat-label">PwD:</span>
+              <span class="stat-value" id="statPwD">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Female:</span>
+              <span class="stat-value" id="statFemale">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Male:</span>
+              <span class="stat-value" id="statGeneral">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Performance Analytics:</div>
+          <div class="stats">
+            <div class="stat-item">
+              <span class="stat-label">Fetch OSM:</span>
+              <span class="stat-value" id="statFetchTime">-</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Build Graph:</span>
+              <span class="stat-value" id="statBuildGraphTime">-</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Build KD-Tree:</span>
+              <span class="stat-value" id="statKDTreeTime">-</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Dijkstra (×C):</span>
+              <span class="stat-value" id="statDijkstraTime">-</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Allotment:</span>
+              <span class="stat-value" id="statAllotmentTime">-</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">A* Pathfinding:</span>
+              <span class="stat-value" id="statAStarTime">-</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="legend">
+            <div class="legend-title">Legend</div>
+            <div id="legend-list"></div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: #6b7280"></div>
+              <span>Unassigned Student</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="map-container">
+        <div id="map"></div>
+        <div class="loader" id="loader">
+          <div class="spinner"></div>
+          <div class="loader-text">Processing...</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
