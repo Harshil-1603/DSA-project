@@ -1,4 +1,5 @@
 # Build artifacts
+vcpkg/
 build/
 *.o
 *.a

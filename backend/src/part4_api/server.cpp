@@ -76,14 +76,44 @@ namespace route_finder
         {
             for (auto &centre : centres)
             {
-                centre.snapped_node_id = find_nearest_node(centre.lat, centre.lon);
+                centre.snapped_node_id = find_nearest_in_main_component(centre.lat, centre.lon);
+                std::cout << "Centre " << centre.centre_id << " snapped to node " << centre.snapped_node_id;
+                if (node_component.count(centre.snapped_node_id))
+                {
+                    std::cout << " (component " << node_component[centre.snapped_node_id] << ")";
+                }
+                std::cout << std::endl;
             }
         }
 
         void snap_students_to_graph(json const &students_json)
         {
+            std::cout << "\n⚡ Snapping " << students_json.size() << " students to road network..." << std::endl;
+            auto start = std::chrono::high_resolution_clock::now();
+
+            std::unordered_map<int, int> comp_count;
+            for (auto &p : node_component)
+            {
+                if (p.second > 0)
+                    comp_count[p.second]++;
+            }
+            int main_comp_id = -1;
+            int max_comp_size = 0;
+            for (auto &q : comp_count)
+            {
+                if (q.second > max_comp_size)
+                {
+                    max_comp_size = q.second;
+                    main_comp_id = q.first;
+                }
+            }
+            std::cout << "   Main component ID is " << main_comp_id << " with " << max_comp_size << " nodes." << std::endl;
+
             students.clear();
             students.reserve(students_json.size());
+            int snapped = 0;
+            int failed = 0;
+            int rescued = 0;
 
             for (const auto &s : students_json)
             {
@@ -96,19 +126,38 @@ namespace route_finder
 
                 if (student.snapped_node_id != -1)
                 {
-                    const int component = node_component.count(student.snapped_node_id) ? node_component[student.snapped_node_id] : -1;
-                    if (component <= 0)
+                    int comp_id = node_component.count(student.snapped_node_id) ? node_component[student.snapped_node_id] : -1;
+
+                    // --- 3. THE FIX: Check if not on the mainland ---
+                    if (comp_id != main_comp_id)
                     {
-                        const long fallback = find_nearest_in_main_component(student.lat, student.lon);
-                        if (fallback != -1)
+                        long alt_node = find_nearest_in_main_component(student.lat, student.lon);
+                        if (alt_node != -1)
                         {
-                            student.snapped_node_id = fallback;
+                            student.snapped_node_id = alt_node;
+                            rescued++;
+                        }
+                        else
+                        {
+                            student.snapped_node_id = -1;
                         }
                     }
                 }
 
+                if (student.snapped_node_id == -1)
+                {
+                    failed++;
+                }
+                else
+                {
+                    snapped++;
+                }
                 students.push_back(student);
             }
+
+            auto end = std::chrono::high_resolution_clock::now();
+            long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+            std::cout << "✅ Snapping complete: " << snapped << " snapped, " << rescued << " rescued, " << failed << " failed in " << ms << "ms" << std::endl;
         }
 
         json build_debug_distances_payload()
@@ -337,6 +386,9 @@ int main()
                 generate_simulated_graph_fallback(min_lat, min_lon, max_lat, max_lon);
             }
 
+            // Compute connected components to identify main component
+            compute_connected_components();
+
             const auto kd_start = std::chrono::high_resolution_clock::now();
             build_kdtree_for_graph();
             snap_centres_to_graph();
@@ -397,22 +449,8 @@ int main()
             snap_students_to_graph(request_body["students"]);
             const auto snap_end = std::chrono::high_resolution_clock::now();
 
-            const auto dijkstra_start = std::chrono::high_resolution_clock::now();
-            std::unordered_map<std::string, std::unordered_map<long, double>> centre_distances_map;
-            allotment_lookup_map.clear();
-
-            for (const auto &centre : centres)
-            {
-                std::cout << "Running Dijkstra from centre " << centre.centre_id << "..." << std::endl;
-                const auto distances = dijkstra(centre.snapped_node_id);
-                centre_distances_map[centre.centre_id] = distances;
-
-                for (const auto &[node_id, dist] : distances)
-                {
-                    allotment_lookup_map[node_id][centre.centre_id] = dist;
-                }
-            }
-            const auto dijkstra_end = std::chrono::high_resolution_clock::now();
+            // Dijkstra already computed in /build-graph - no need to re-run
+            std::cout << "\n🎯 Using pre-computed Dijkstra distances from /build-graph..." << std::endl;
 
             const auto allot_start = std::chrono::high_resolution_clock::now();
             run_batch_greedy_allotment();
@@ -420,7 +458,6 @@ int main()
             const auto total_end = std::chrono::high_resolution_clock::now();
 
             const auto snap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(snap_end - snap_start).count();
-            const auto dijkstra_ms = std::chrono::duration_cast<std::chrono::milliseconds>(dijkstra_end - dijkstra_start).count();
             const auto allot_ms = std::chrono::duration_cast<std::chrono::milliseconds>(allot_end - allot_start).count();
             const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(total_end - total_start).count();
 
@@ -430,7 +467,6 @@ int main()
             response["debug_distances"] = build_debug_distances_payload();
             response["timing"] = {
                 {"snap_students_ms", snap_ms},
-                {"dijkstra_ms", dijkstra_ms},
                 {"allotment_ms", allot_ms},
                 {"total_ms", total_ms}};
 
@@ -532,14 +568,37 @@ int main()
             response["status"] = "success";
 
             json path_coords = json::array();
-            for (long node_id : best_path)
+            double total_time_seconds = 0.0;
+            
+            for (size_t i = 0; i < best_path.size(); i++)
             {
+                long node_id = best_path[i];
                 if (nodes.find(node_id) != nodes.end())
                 {
                     path_coords.push_back({nodes[node_id].lat, nodes[node_id].lon});
+                    
+                    // Calculate actual travel time by summing edge weights (which are in seconds)
+                    if (i > 0)
+                    {
+                        long prev_node = best_path[i - 1];
+                        if (graph.find(prev_node) != graph.end())
+                        {
+                            // Graph structure: std::pair<long, double> = (neighbor_id, time_seconds)
+                            for (const auto &neighbor : graph[prev_node])
+                            {
+                                if (neighbor.first == node_id)
+                                {
+                                    total_time_seconds += neighbor.second;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            
             response["path"] = path_coords;
+            response["travel_time_seconds"] = total_time_seconds;
 
             const auto astar_ms = std::chrono::duration_cast<std::chrono::milliseconds>(astar_end - astar_start).count();
             response["timing"] = {

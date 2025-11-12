@@ -40,7 +40,7 @@ function initMap() {
     }
   });
 
-  updateLegend(); 
+  updateLegend();
 
   console.log("Map initialized");
 }
@@ -99,7 +99,7 @@ function addCentre(lat, lon) {
   const color = centreColors[(centres.length - 1) % centreColors.length];
   const marker = L.circleMarker([lat, lon], {
     radius: 10,
-    fillColor: color, 
+    fillColor: color,
     color: "#fff",
     weight: 3,
     opacity: 1,
@@ -114,7 +114,7 @@ function addCentre(lat, lon) {
   centreMarkers.push(marker);
 
   updateStats();
-  updateLegend(); 
+  updateLegend();
   console.log(`Added ${centreId} at [${lat}, ${lon}]`);
 }
 
@@ -249,7 +249,7 @@ function simulateStudents() {
     }
   }
   const simulationRadius = maxDistanceFromCentroid * 1.25;
-  const finalRadius = Math.max(simulationRadius, 2000); 
+  const finalRadius = Math.max(simulationRadius, 2000);
 
   const latOffset = finalRadius / 111320;
   const lonOffset =
@@ -282,9 +282,9 @@ function simulateStudents() {
     if (rand < 0.05) {
       category = "pwd"; // 5%
     } else if (rand < 0.2) {
-      category = "female"; // 15% 
+      category = "female"; // 15%
     } else {
-      category = "male"; // 80% 
+      category = "male"; // 80%
     }
 
     const student = {
@@ -424,19 +424,21 @@ function visualizeAssignments() {
 
     let debugTable = `
       <hr style="margin: 5px 0;">
-      <strong>Debug Info (Travel Time):</strong>
+      <strong>Travel Time:</strong>
       <table style="width: 100%; font-size: 0.8em;">
     `;
 
     centres.forEach((centre, i) => {
-      const time = studentDistances[centre.centre_id];
+      const timeSeconds = studentDistances[centre.centre_id];
       const color = centreColors[i % centreColors.length];
 
       let timeText = "N/A";
-      if (time === Infinity || (time && time > 9000000)) {
+      if (timeSeconds === Infinity || (timeSeconds && timeSeconds > 9000000)) {
         timeText = "<strong>Unreachable</strong>";
-      } else if (time != null) {
-        timeText = `${(time / 60).toFixed(1)} min (${time.toFixed(0)}s)`; // Show minutes and seconds
+      } else if (timeSeconds != null) {
+        const minutes = Math.floor(timeSeconds / 60);
+        const seconds = Math.floor(timeSeconds % 60);
+        timeText = `${minutes}m ${seconds}s`;
       }
 
       debugTable += `
@@ -507,8 +509,15 @@ async function showPath(studentId, centreId) {
         console.log("A* timing:", data.timing);
       }
 
+      let travelMsg = `Path found with ${data.path.length} points!`;
+      if (data.travel_time_seconds != null) {
+        const minutes = Math.floor(data.travel_time_seconds / 60);
+        const seconds = Math.floor(data.travel_time_seconds % 60);
+        travelMsg += `\nEstimated travel time: ${minutes}m ${seconds}s`;
+      }
+
       hideLoader();
-      alert(`Path found with ${data.path.length} points!`);
+      alert(travelMsg);
       console.log("Path drawn successfully");
     } else {
       hideLoader();
@@ -551,13 +560,13 @@ function updateStats() {
   document.getElementById("statGeneral").textContent = maleCount;
 }
 
-// ==================== LEGEND ====================
+//Legend
 
 function updateLegend() {
   const legendList = document.getElementById("legend-list");
-  if (!legendList) return; // Skip if legend element doesn't exist yet
+  if (!legendList) return; 
 
-  legendList.innerHTML = ""; // Clear old legend
+  legendList.innerHTML = ""; 
 
   centres.forEach((centre, index) => {
     const color = centreColors[index % centreColors.length];
@@ -572,7 +581,7 @@ function updateLegend() {
   });
 }
 
-// ==================== LOADER ====================
+//Loader
 
 function showLoader(message) {
   const loader = document.getElementById("loader");
@@ -586,8 +595,7 @@ function hideLoader() {
   loader.classList.remove("active");
 }
 
-// ==================== EXPORT DIAGNOSTICS ====================
-
+//export diagnostics
 async function exportDiagnostics() {
   try {
     showLoader("Generating diagnostic report...");
@@ -601,7 +609,7 @@ async function exportDiagnostics() {
       return;
     }
 
-    // Create a downloadable JSON file
+    //json file for local use
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const filename = `allotment_diagnostics_${timestamp}.json`;
 
@@ -627,7 +635,6 @@ async function exportDiagnostics() {
 }
 
 //Parallel Dijkstra
-
 async function testParallelDijkstra() {
   const btn = document.getElementById("testParallelBtn");
   const resultsDiv = document.getElementById("parallelResults");
