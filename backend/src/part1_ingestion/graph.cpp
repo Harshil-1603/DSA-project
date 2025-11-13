@@ -1,3 +1,4 @@
+#include "json_single.hpp"
 #include "route_finder/graph.hpp"
 
 #include <algorithm>
@@ -10,7 +11,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "external/json_single.hpp"
 #include "route_finder/geometry.hpp"
 #include "route_finder/kdtree.hpp"
 #include "route_finder/routing.hpp"

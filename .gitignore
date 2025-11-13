@@ -1,10 +1,21 @@
 # Build artifacts
+build/
 *.o
 *.a
 *.so
 *.exe
+*.obj
+*.obj.d
 route_finder
 backend/route_finder
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
 
 # IDE
 .vscode/
@@ -16,3 +27,11 @@ backend/route_finder
 # OS
 .DS_Store
 Thumbs.db
+
+# Temporary helper scripts (not needed in repo)
+setup_new_gcc.ps1
+configure_new_gcc.ps1
+
+# Compatibility headers (not needed with GCC 7.1+)
+backend/external/compat/
+backend/external/optional_compat.hpp

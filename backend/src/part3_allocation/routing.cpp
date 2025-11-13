@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-#include "external/json_single.hpp"
+#include "json_single.hpp"
 #include "route_finder/geometry.hpp"
 #include "route_finder/state.hpp"
 
@@ -138,8 +138,10 @@ std::vector<long> a_star_bidirectional(long start_node, long goal_node)
 
             if (graph.find(current.node_id) != graph.end())
             {
-                for (const auto &[neighbor, edge_weight] : graph[current.node_id])
+                for (auto it = graph[current.node_id].begin(); it != graph[current.node_id].end(); ++it)
                 {
+                    const long neighbor = it->first;
+                    const double edge_weight = it->second;
                     const double tentative_g = g_score_forward[current.node_id] + edge_weight;
 
                     if (!g_score_forward.count(neighbor) || tentative_g < g_score_forward[neighbor])
@@ -173,8 +175,10 @@ std::vector<long> a_star_bidirectional(long start_node, long goal_node)
 
             if (graph.find(current.node_id) != graph.end())
             {
-                for (const auto &[neighbor, edge_weight] : graph[current.node_id])
+                for (auto it = graph[current.node_id].begin(); it != graph[current.node_id].end(); ++it)
                 {
+                    const long neighbor = it->first;
+                    const double edge_weight = it->second;
                     const double tentative_g = g_score_backward[current.node_id] + edge_weight;
 
                     if (!g_score_backward.count(neighbor) || tentative_g < g_score_backward[neighbor])
@@ -232,10 +236,10 @@ std::vector<long> a_star(long start_node, long goal_node)
     std::priority_queue<long, std::vector<long>, decltype(compare)> open_set(compare);
     std::set<long> open_tracker;
 
-    for (const auto &[node_id, _] : nodes)
+    for (auto it = nodes.begin(); it != nodes.end(); ++it)
     {
-        g_score[node_id] = std::numeric_limits<double>::max();
-        f_score[node_id] = std::numeric_limits<double>::max();
+        g_score[it->first] = std::numeric_limits<double>::max();
+        f_score[it->first] = std::numeric_limits<double>::max();
     }
 
     g_score[start_node] = 0.0;
@@ -265,8 +269,10 @@ std::vector<long> a_star(long start_node, long goal_node)
 
         if (graph.find(current) != graph.end())
         {
-            for (const auto &[neighbor, edge_weight] : graph[current])
+            for (auto it = graph[current].begin(); it != graph[current].end(); ++it)
             {
+                const long neighbor = it->first;
+                const double edge_weight = it->second;
                 const double tentative_g = g_score[current] + edge_weight;
 
                 if (tentative_g < g_score[neighbor])
@@ -296,17 +302,19 @@ std::unordered_map<long, double> dijkstra(long start_node)
                         std::greater<std::pair<double, long>>>
         pq;
 
-    for (const auto &[node_id, _] : nodes)
+    for (auto it = nodes.begin(); it != nodes.end(); ++it)
     {
-        distances[node_id] = std::numeric_limits<double>::max();
+        distances[it->first] = std::numeric_limits<double>::max();
     }
     distances[start_node] = 0.0;
     pq.push({0.0, start_node});
 
     while (!pq.empty())
     {
-        const auto [current_dist, current_node] = pq.top();
+        const auto current_pair = pq.top();
         pq.pop();
+        const double current_dist = current_pair.first;
+        const long current_node = current_pair.second;
 
         if (current_dist > distances[current_node])
         {
@@ -315,8 +323,10 @@ std::unordered_map<long, double> dijkstra(long start_node)
 
         if (graph.find(current_node) != graph.end())
         {
-            for (const auto &[neighbor, edge_weight] : graph[current_node])
+            for (auto it = graph[current_node].begin(); it != graph[current_node].end(); ++it)
             {
+                const long neighbor = it->first;
+                const double edge_weight = it->second;
                 const double new_dist = current_dist + edge_weight;
                 if (new_dist < distances[neighbor])
                 {
@@ -339,10 +349,10 @@ std::pair<std::unordered_map<long, double>, std::unordered_map<long, long>> dijk
                         std::greater<std::pair<double, long>>>
         pq;
 
-    for (const auto &[node_id, _] : nodes)
+    for (auto it = nodes.begin(); it != nodes.end(); ++it)
     {
-        distances[node_id] = std::numeric_limits<double>::max();
-        parents[node_id] = -1;
+        distances[it->first] = std::numeric_limits<double>::max();
+        parents[it->first] = -1;
     }
     distances[start_node] = 0.0;
     parents[start_node] = start_node;
@@ -350,8 +360,10 @@ std::pair<std::unordered_map<long, double>, std::unordered_map<long, long>> dijk
 
     while (!pq.empty())
     {
-        const auto [current_dist, current_node] = pq.top();
+        const auto current_pair = pq.top();
         pq.pop();
+        const double current_dist = current_pair.first;
+        const long current_node = current_pair.second;
 
         if (current_dist > distances[current_node])
         {
@@ -360,8 +372,10 @@ std::pair<std::unordered_map<long, double>, std::unordered_map<long, long>> dijk
 
         if (graph.find(current_node) != graph.end())
         {
-            for (const auto &[neighbor, edge_weight] : graph[current_node])
+            for (auto it = graph[current_node].begin(); it != graph[current_node].end(); ++it)
             {
+                const long neighbor = it->first;
+                const double edge_weight = it->second;
                 const double new_dist = current_dist + edge_weight;
 
                 if (new_dist < distances[neighbor])
@@ -387,13 +401,13 @@ DijkstraResult run_dijkstra_for_centre(const Centre &centre)
     try
     {
         const auto start_time = std::chrono::high_resolution_clock::now();
-        auto [distances, parents] = dijkstra_with_parents(centre.snapped_node_id);
+        auto result_pair = dijkstra_with_parents(centre.snapped_node_id);
         const auto end_time = std::chrono::high_resolution_clock::now();
 
         result.computation_time_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-        result.distances = std::move(distances);
-        result.parents = std::move(parents);
+        result.distances = std::move(result_pair.first);
+        result.parents = std::move(result_pair.second);
         result.success = true;
 
         std::cout << "Dijkstra complete for " << centre.centre_id << " in "
@@ -414,11 +428,11 @@ bool save_dijkstra_results(const DijkstraResult &result, const std::string &dist
     try
     {
         nlohmann::json distances_json = nlohmann::json::object();
-        for (const auto &[node_id, dist] : result.distances)
+        for (auto it = result.distances.begin(); it != result.distances.end(); ++it)
         {
-            if (dist != std::numeric_limits<double>::max())
+            if (it->second != std::numeric_limits<double>::max())
             {
-                distances_json[std::to_string(node_id)] = dist;
+                distances_json[std::to_string(it->first)] = it->second;
             }
         }
 
@@ -431,11 +445,11 @@ bool save_dijkstra_results(const DijkstraResult &result, const std::string &dist
         dist_out << distances_json.dump(2);
 
         nlohmann::json parents_json = nlohmann::json::object();
-        for (const auto &[node_id, parent] : result.parents)
+        for (auto it = result.parents.begin(); it != result.parents.end(); ++it)
         {
-            if (parent != -1)
+            if (it->second != -1)
             {
-                parents_json[std::to_string(node_id)] = parent;
+                parents_json[std::to_string(it->first)] = it->second;
             }
         }
 

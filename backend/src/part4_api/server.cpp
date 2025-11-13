@@ -1,5 +1,20 @@
-#include "external/httplib.h"
-#include "external/json_single.hpp"
+// Enable Windows 10+ APIs for httplib (CreateFile2, etc.)
+#ifdef _WIN32
+#ifndef WINVER
+#define WINVER 0x0A00  // Windows 10
+#endif
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00  // Windows 10
+#endif
+// Include winsock2.h before windows.h to avoid warnings
+#include <winsock2.h>
+#include <windows.h>
+#include <fileapi.h>
+#include <winbase.h>
+#endif
+
+#include "httplib.h"
+#include "json_single.hpp"
 
 #include <chrono>
 #include <cmath>
