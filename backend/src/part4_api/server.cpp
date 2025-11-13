@@ -1,10 +1,14 @@
 // Enable Windows 10+ APIs for httplib (CreateFile2, etc.)
 #ifdef _WIN32
 #ifndef WINVER
-#define WINVER 0x0A00  // Windows 10
+#define WINVER 0x0A00 // Windows 10
 #endif
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0A00  // Windows 10
+#define _WIN32_WINNT 0x0A00 // Windows 10
+#endif
+// Prevent Windows.h from defining min/max macros
+#ifndef NOMINMAX
+#define NOMINMAX
 #endif
 // Include winsock2.h before windows.h to avoid warnings
 #include <winsock2.h>
@@ -42,227 +46,226 @@
 
 namespace route_finder
 {
-namespace
-{
-
-using json = nlohmann::json;
-
-void build_kdtree_for_graph()
-{
-    std::cout << "Building KD-tree for " << nodes.size() << " nodes..." << std::endl;
-
-    std::vector<std::pair<long, std::pair<double, double>>> node_points;
-    node_points.reserve(nodes.size());
-
-    for (const auto &[node_id, node] : nodes)
+    namespace
     {
-        if (graph.find(node_id) != graph.end() && !graph[node_id].empty())
+
+        using json = nlohmann::json;
+
+        void build_kdtree_for_graph()
         {
-            node_points.push_back({node_id, {node.lat, node.lon}});
-        }
-    }
+            std::cout << "Building KD-tree for " << nodes.size() << " nodes..." << std::endl;
 
-    std::cout << "KD-tree will be built from " << node_points.size() << " connected nodes." << std::endl;
+            std::vector<std::pair<long, std::pair<double, double>>> node_points;
+            node_points.reserve(nodes.size());
 
-    reset_kdtree();
-    kdtree_root = build_kdtree(node_points, 0);
-}
-
-void snap_centres_to_graph()
-{
-    for (auto &centre : centres)
-    {
-        centre.snapped_node_id = find_nearest_node(centre.lat, centre.lon);
-    }
-}
-
-void snap_students_to_graph(json const &students_json)
-{
-    students.clear();
-    students.reserve(students_json.size());
-
-    for (const auto &s : students_json)
-    {
-        Student student;
-        student.student_id = s.value("student_id", "");
-        student.lat = s.value("lat", 0.0);
-        student.lon = s.value("lon", 0.0);
-        student.category = s.value("category", "male");
-        student.snapped_node_id = find_best_snap_node_fast(student.lat, student.lon);
-
-        if (student.snapped_node_id != -1)
-        {
-            const int component = node_component.count(student.snapped_node_id) ? node_component[student.snapped_node_id] : -1;
-            if (component <= 0)
+            for (const auto &[node_id, node] : nodes)
             {
-                const long fallback = find_nearest_in_main_component(student.lat, student.lon);
-                if (fallback != -1)
+                if (graph.find(node_id) != graph.end() && !graph[node_id].empty())
                 {
-                    student.snapped_node_id = fallback;
-                }
-            }
-        }
-
-        students.push_back(student);
-    }
-}
-
-json build_debug_distances_payload()
-{
-    json distances_json = json::object();
-    for (const auto &student : students)
-    {
-        if (allotment_lookup_map.find(student.snapped_node_id) != allotment_lookup_map.end())
-        {
-            distances_json[student.student_id] = allotment_lookup_map[student.snapped_node_id];
-        }
-        else
-        {
-            distances_json[student.student_id] = json::object();
-        }
-    }
-    return distances_json;
-}
-
-json collect_diagnostics()
-{
-    json diagnostic_report;
-
-    const auto now = std::chrono::system_clock::now();
-    const std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-    char timestamp[64];
-    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_time));
-
-    diagnostic_report["metadata"] = {
-        {"run_id", std::string("run_") + timestamp},
-        {"timestamp", timestamp},
-        {"city", "Unnamed"},
-        {"num_students", students.size()},
-        {"num_centres", centres.size()},
-        {"capacity_per_centre", centres.empty() ? 0 : centres.front().max_capacity},
-        {"notes", "Detailed diagnostic export"}};
-
-    std::unordered_map<std::string, int> centre_assignment_count;
-    for (const auto &centre : centres)
-    {
-        centre_assignment_count[centre.centre_id] = 0;
-    }
-    for (const auto &[student_id, centre_id] : final_assignments)
-    {
-        centre_assignment_count[centre_id]++;
-    }
-
-    json centres_json = json::array();
-    for (const auto &centre : centres)
-    {
-        centres_json.push_back({
-            {"centre_id", centre.centre_id},
-            {"lat", centre.lat},
-            {"lon", centre.lon},
-            {"graph_node_id", centre.snapped_node_id},
-            {"assigned_students", centre_assignment_count[centre.centre_id]}});
-    }
-    diagnostic_report["centres"] = centres_json;
-
-    json students_json = json::array();
-    int unreachable_count = 0;
-    int large_snap_count = 0;
-    double snap_distance_sum = 0.0;
-    int snap_count = 0;
-
-    for (const auto &student : students)
-    {
-        json student_json;
-        student_json["student_id"] = student.student_id;
-        student_json["lat"] = student.lat;
-        student_json["lon"] = student.lon;
-        student_json["category"] = student.category;
-        student_json["snap_node_id"] = student.snapped_node_id;
-
-        double snap_distance = -1.0;
-        if (nodes.find(student.snapped_node_id) != nodes.end())
-        {
-            const auto &snapped_node = nodes[student.snapped_node_id];
-            snap_distance = haversine(student.lat, student.lon, snapped_node.lat, snapped_node.lon);
-            snap_distance_sum += snap_distance;
-            snap_count++;
-            if (snap_distance > 100.0)
-            {
-                large_snap_count++;
-            }
-        }
-        student_json["snap_distance_m"] = snap_distance;
-
-        const bool assigned = final_assignments.find(student.student_id) != final_assignments.end();
-        if (!assigned)
-        {
-            unreachable_count++;
-        }
-        student_json["assigned_centre_id"] = assigned ? json(final_assignments[student.student_id]) : json();
-
-        std::map<std::string, double> alternative_costs;
-        int reachable_centres = 0;
-        double best_distance = std::numeric_limits<double>::max();
-        double second_best = std::numeric_limits<double>::max();
-
-        for (const auto &centre : centres)
-        {
-            double distance = std::numeric_limits<double>::max();
-            const auto lookup_it = allotment_lookup_map.find(student.snapped_node_id);
-            if (lookup_it != allotment_lookup_map.end())
-            {
-                const auto entry_it = lookup_it->second.find(centre.centre_id);
-                if (entry_it != lookup_it->second.end())
-                {
-                    distance = entry_it->second;
+                    node_points.push_back({node_id, {node.lat, node.lon}});
                 }
             }
 
-            alternative_costs[centre.centre_id] = distance;
-            if (distance < std::numeric_limits<double>::max())
+            std::cout << "KD-tree will be built from " << node_points.size() << " connected nodes." << std::endl;
+
+            reset_kdtree();
+            kdtree_root = build_kdtree(node_points, 0);
+        }
+
+        void snap_centres_to_graph()
+        {
+            for (auto &centre : centres)
             {
-                reachable_centres++;
-                if (distance < best_distance)
-                {
-                    second_best = best_distance;
-                    best_distance = distance;
-                }
-                else if (distance < second_best)
-                {
-                    second_best = distance;
-                }
+                centre.snapped_node_id = find_nearest_node(centre.lat, centre.lon);
             }
         }
 
-        student_json["alt_distances_m"] = alternative_costs;
-        student_json["component_id"] = node_component.count(student.snapped_node_id) ? node_component[student.snapped_node_id] : -1;
-        student_json["reachable_count"] = reachable_centres;
-        student_json["near_tie"] = (second_best < std::numeric_limits<double>::max() && std::abs(second_best - best_distance) < 20.0);
+        void snap_students_to_graph(json const &students_json)
+        {
+            students.clear();
+            students.reserve(students_json.size());
 
-        students_json.push_back(student_json);
-    }
+            for (const auto &s : students_json)
+            {
+                Student student;
+                student.student_id = s.value("student_id", "");
+                student.lat = s.value("lat", 0.0);
+                student.lon = s.value("lon", 0.0);
+                student.category = s.value("category", "male");
+                student.snapped_node_id = find_best_snap_node_fast(student.lat, student.lon);
 
-    diagnostic_report["students"] = students_json;
-    diagnostic_report["summary"] = {
-        {"unreachable_count", unreachable_count},
-        {"large_snap_count", large_snap_count},
-        {"avg_snap_distance_m", snap_count > 0 ? snap_distance_sum / snap_count : 0.0}};
+                if (student.snapped_node_id != -1)
+                {
+                    const int component = node_component.count(student.snapped_node_id) ? node_component[student.snapped_node_id] : -1;
+                    if (component <= 0)
+                    {
+                        const long fallback = find_nearest_in_main_component(student.lat, student.lon);
+                        if (fallback != -1)
+                        {
+                            student.snapped_node_id = fallback;
+                        }
+                    }
+                }
 
-    return diagnostic_report;
-}
+                students.push_back(student);
+            }
+        }
 
-void ensure_graph_ready(httplib::Response &res)
-{
-    if (graph.empty() || nodes.empty())
-    {
-        json error;
-        error["status"] = "error";
-        error["message"] = "Graph not built. Call /build-graph first.";
-        res.set_content(error.dump(), "application/json");
-    }
-}
+        json build_debug_distances_payload()
+        {
+            json distances_json = json::object();
+            for (const auto &student : students)
+            {
+                if (allotment_lookup_map.find(student.snapped_node_id) != allotment_lookup_map.end())
+                {
+                    distances_json[student.student_id] = allotment_lookup_map[student.snapped_node_id];
+                }
+                else
+                {
+                    distances_json[student.student_id] = json::object();
+                }
+            }
+            return distances_json;
+        }
 
-} // namespace
+        json collect_diagnostics()
+        {
+            json diagnostic_report;
+
+            const auto now = std::chrono::system_clock::now();
+            const std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+            char timestamp[64];
+            std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_time));
+
+            diagnostic_report["metadata"] = {
+                {"run_id", std::string("run_") + timestamp},
+                {"timestamp", timestamp},
+                {"city", "Unnamed"},
+                {"num_students", students.size()},
+                {"num_centres", centres.size()},
+                {"capacity_per_centre", centres.empty() ? 0 : centres.front().max_capacity},
+                {"notes", "Detailed diagnostic export"}};
+
+            std::unordered_map<std::string, int> centre_assignment_count;
+            for (const auto &centre : centres)
+            {
+                centre_assignment_count[centre.centre_id] = 0;
+            }
+            for (const auto &[student_id, centre_id] : final_assignments)
+            {
+                centre_assignment_count[centre_id]++;
+            }
+
+            json centres_json = json::array();
+            for (const auto &centre : centres)
+            {
+                centres_json.push_back({{"centre_id", centre.centre_id},
+                                        {"lat", centre.lat},
+                                        {"lon", centre.lon},
+                                        {"graph_node_id", centre.snapped_node_id},
+                                        {"assigned_students", centre_assignment_count[centre.centre_id]}});
+            }
+            diagnostic_report["centres"] = centres_json;
+
+            json students_json = json::array();
+            int unreachable_count = 0;
+            int large_snap_count = 0;
+            double snap_distance_sum = 0.0;
+            int snap_count = 0;
+
+            for (const auto &student : students)
+            {
+                json student_json;
+                student_json["student_id"] = student.student_id;
+                student_json["lat"] = student.lat;
+                student_json["lon"] = student.lon;
+                student_json["category"] = student.category;
+                student_json["snap_node_id"] = student.snapped_node_id;
+
+                double snap_distance = -1.0;
+                if (nodes.find(student.snapped_node_id) != nodes.end())
+                {
+                    const auto &snapped_node = nodes[student.snapped_node_id];
+                    snap_distance = haversine(student.lat, student.lon, snapped_node.lat, snapped_node.lon);
+                    snap_distance_sum += snap_distance;
+                    snap_count++;
+                    if (snap_distance > 100.0)
+                    {
+                        large_snap_count++;
+                    }
+                }
+                student_json["snap_distance_m"] = snap_distance;
+
+                const bool assigned = final_assignments.find(student.student_id) != final_assignments.end();
+                if (!assigned)
+                {
+                    unreachable_count++;
+                }
+                student_json["assigned_centre_id"] = assigned ? json(final_assignments[student.student_id]) : json();
+
+                std::map<std::string, double> alternative_costs;
+                int reachable_centres = 0;
+                double best_distance = std::numeric_limits<double>::max();
+                double second_best = std::numeric_limits<double>::max();
+
+                for (const auto &centre : centres)
+                {
+                    double distance = std::numeric_limits<double>::max();
+                    const auto lookup_it = allotment_lookup_map.find(student.snapped_node_id);
+                    if (lookup_it != allotment_lookup_map.end())
+                    {
+                        const auto entry_it = lookup_it->second.find(centre.centre_id);
+                        if (entry_it != lookup_it->second.end())
+                        {
+                            distance = entry_it->second;
+                        }
+                    }
+
+                    alternative_costs[centre.centre_id] = distance;
+                    if (distance < std::numeric_limits<double>::max())
+                    {
+                        reachable_centres++;
+                        if (distance < best_distance)
+                        {
+                            second_best = best_distance;
+                            best_distance = distance;
+                        }
+                        else if (distance < second_best)
+                        {
+                            second_best = distance;
+                        }
+                    }
+                }
+
+                student_json["alt_distances_m"] = alternative_costs;
+                student_json["component_id"] = node_component.count(student.snapped_node_id) ? node_component[student.snapped_node_id] : -1;
+                student_json["reachable_count"] = reachable_centres;
+                student_json["near_tie"] = (second_best < std::numeric_limits<double>::max() && std::abs(second_best - best_distance) < 20.0);
+
+                students_json.push_back(student_json);
+            }
+
+            diagnostic_report["students"] = students_json;
+            diagnostic_report["summary"] = {
+                {"unreachable_count", unreachable_count},
+                {"large_snap_count", large_snap_count},
+                {"avg_snap_distance_m", snap_count > 0 ? snap_distance_sum / snap_count : 0.0}};
+
+            return diagnostic_report;
+        }
+
+        void ensure_graph_ready(httplib::Response &res)
+        {
+            if (graph.empty() || nodes.empty())
+            {
+                json error;
+                error["status"] = "error";
+                error["message"] = "Graph not built. Call /build-graph first.";
+                res.set_content(error.dump(), "application/json");
+            }
+        }
+
+    } // namespace
 } // namespace route_finder
 
 int main()
@@ -681,5 +684,3 @@ int main()
     server.listen("0.0.0.0", 8080);
     return 0;
 }
-
-

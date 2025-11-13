@@ -1,13 +1,13 @@
-// ==================== GLOBAL STATE ====================
-
+//global API URL
 const API_BASE_URL = "http://localhost:8080";
 
 let map;
 let centres = [];
 let students = [];
 let assignments = {};
-let debugDistances = {}; // <-- NEW GLOBAL VARIABLE
+let debugDistances = {};
 let graphBuilt = false;
+let centreSelectionEnabled = false;
 
 let centreMarkers = [];
 let studentMarkers = [];
@@ -24,29 +24,64 @@ const centreColors = [
   "#f97316",
 ];
 
-// ==================== INITIALIZE MAP ====================
-
+//Initialize map
 function initMap() {
   // Initialize map centered on a default location (can be changed)
-  map = L.map("map").setView([26.27396219795028, 73.03599411582631], 14); // Jodhpur, India
+  map = L.map("map").setView([26.27396219795028, 73.03599411582631], 14); // Jodhpur for now
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap contributors",
     maxZoom: 19,
   }).addTo(map);
 
-  // Add click event to add centres
   map.on("click", function (e) {
-    addCentre(e.latlng.lat, e.latlng.lng);
+    if (centreSelectionEnabled) {
+      addCentre(e.latlng.lat, e.latlng.lng);
+    }
   });
 
-  updateLegend(); // Initialize empty legend on map load
+  updateLegend(); 
 
   console.log("Map initialized");
 }
 
-// ==================== CENTRE MANAGEMENT ====================
+// Centre Selection
+function updateSelectCentresButton() {
+  const capacity = parseInt(document.getElementById("centreCapacity").value);
+  const selectBtn = document.getElementById("selectCentresBtn");
 
+  if (capacity && capacity > 0) {
+    selectBtn.disabled = false;
+  } else {
+    selectBtn.disabled = true;
+  }
+}
+
+function enableCentreSelection() {
+  const capacity = parseInt(document.getElementById("centreCapacity").value);
+
+  if (!capacity || capacity <= 0) {
+    alert("Please enter a valid centre capacity first!");
+    return;
+  }
+
+  centreSelectionEnabled = true;
+
+  // Update UI
+  document.getElementById("selectCentresBtn").disabled = true;
+  document.getElementById("selectCentresBtn").textContent =
+    "Centre Selection is active";
+  document.getElementById("selectCentresBtn").style.background = "#10b981";
+  document.getElementById("centreSelectionInfo").hidden = false;
+  document.getElementById("clearCentresBtn").disabled = false;
+  document.getElementById("centreCapacity").disabled = true;
+
+  document.getElementById("map").style.cursor = "crosshair";
+
+  console.log("Centre selection enabled with capacity:", capacity);
+}
+
+//Centre Management
 function addCentre(lat, lon) {
   const centreId = `centre_${centres.length + 1}`;
   const capacity = parseInt(document.getElementById("centreCapacity").value);
@@ -60,11 +95,11 @@ function addCentre(lat, lon) {
 
   centres.push(centre);
 
-  // Add marker to map
+  //marker
   const color = centreColors[(centres.length - 1) % centreColors.length];
   const marker = L.circleMarker([lat, lon], {
     radius: 10,
-    fillColor: color, // FIX: Use dynamic color instead of hardcoded red
+    fillColor: color, 
     color: "#fff",
     weight: 3,
     opacity: 1,
@@ -79,7 +114,7 @@ function addCentre(lat, lon) {
   centreMarkers.push(marker);
 
   updateStats();
-  updateLegend(); // Update legend when centre is added
+  updateLegend(); 
   console.log(`Added ${centreId} at [${lat}, ${lon}]`);
 }
 
@@ -87,13 +122,25 @@ function clearCentres() {
   centres = [];
   centreMarkers.forEach((marker) => map.removeLayer(marker));
   centreMarkers = [];
+  centreSelectionEnabled = false;
+
+  // Reset UI
+  document.getElementById("selectCentresBtn").disabled = false;
+  document.getElementById("selectCentresBtn").textContent =
+    "Enable Centre Selection";
+  document.getElementById("selectCentresBtn").style.background =
+    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)";
+  document.getElementById("centreSelectionInfo").hidden = true;
+  document.getElementById("clearCentresBtn").disabled = true;
+  document.getElementById("centreCapacity").disabled = false;
+  document.getElementById("map").style.cursor = "";
+
   updateStats();
-  updateLegend(); // Update legend when centres are cleared
+  updateLegend();
   console.log("Cleared all centres");
 }
 
-// ==================== GRAPH BUILDING ====================
-
+//Graph building
 async function buildGraph() {
   if (centres.length === 0) {
     alert("Please add at least one test centre first!");
@@ -103,7 +150,6 @@ async function buildGraph() {
   showLoader("Building graph from OpenStreetMap...");
 
   try {
-    // Get map bounds and graph detail setting
     const bounds = map.getBounds();
     const graphDetail = document.getElementById("graphDetail").value;
 
@@ -113,7 +159,7 @@ async function buildGraph() {
       max_lat: bounds.getNorth(),
       max_lon: bounds.getEast(),
       centres: centres,
-      graph_detail: graphDetail, // v4.0: User-configurable graph detail
+      graph_detail: graphDetail,
     };
 
     console.log("Sending build-graph request:", payload);
@@ -134,7 +180,6 @@ async function buildGraph() {
       document.getElementById("testParallelBtn").disabled = false;
       document.getElementById("statNodes").textContent = data.nodes_count;
 
-      // v3.0: Update timing metrics in sidebar
       if (data.timing) {
         document.getElementById("statFetchTime").textContent =
           data.timing.fetch_overpass_ms + " ms";
@@ -145,7 +190,7 @@ async function buildGraph() {
         document.getElementById("statDijkstraTime").textContent =
           data.timing.dijkstra_precompute_ms + " ms";
 
-        console.log("📊 v3.0 Graph Build Timing:", data.timing);
+        console.log("Graph build timing:", data.timing);
       }
 
       hideLoader();
@@ -179,12 +224,11 @@ function simulateStudents() {
     return;
   }
 
-  // Clear existing students
   students = [];
   studentMarkers.forEach((marker) => map.removeLayer(marker));
   studentMarkers = [];
 
-  // --- 1. Calculate Centroid (Average Centre Location) ---
+  //centroid
   let sumLat = 0;
   let sumLon = 0;
   for (const centre of centres) {
@@ -195,7 +239,7 @@ function simulateStudents() {
   const centerLon = sumLon / centres.length;
   const centroid = L.latLng(centerLat, centerLon);
 
-  // --- 2. Calculate Radius based on Farthest Centre ---
+  //radius
   let maxDistanceFromCentroid = 0;
   for (const centre of centres) {
     const centrePoint = L.latLng(centre.lat, centre.lon);
@@ -204,23 +248,18 @@ function simulateStudents() {
       maxDistanceFromCentroid = distance;
     }
   }
-  // Use the farthest centre as the radius, plus 25% padding
   const simulationRadius = maxDistanceFromCentroid * 1.25;
-  // Add a minimum radius in case all centres are at one spot
-  const finalRadius = Math.max(simulationRadius, 2000); // 5km min radius
+  const finalRadius = Math.max(simulationRadius, 2000); 
 
-  // --- 3. Create a tight bounding box around the circle (for efficient rejection sampling) ---
-  // Calculate the lat/lon offset for the radius (approximate)
-  const latOffset = finalRadius / 111320; // 1 degree lat ≈ 111.32 km
+  const latOffset = finalRadius / 111320;
   const lonOffset =
-    finalRadius / (111320 * Math.cos((centerLat * Math.PI) / 180)); // Adjust for latitude
+    finalRadius / (111320 * Math.cos((centerLat * Math.PI) / 180));
 
   const minLat = centerLat - latOffset;
   const maxLat = centerLat + latOffset;
   const minLon = centerLon - lonOffset;
   const maxLon = centerLon + lonOffset;
 
-  // --- 4. Use Rejection Sampling ---
   let studentsGenerated = 0;
   let safetyBreak = 0;
   while (studentsGenerated < count && safetyBreak < count * 100) {
@@ -243,9 +282,9 @@ function simulateStudents() {
     if (rand < 0.05) {
       category = "pwd"; // 5%
     } else if (rand < 0.2) {
-      category = "female"; // 15% (0.05 + 0.15 = 0.20)
+      category = "female"; // 15% 
     } else {
-      category = "male"; // 80% (remaining)
+      category = "male"; // 80% 
     }
 
     const student = {
@@ -256,7 +295,6 @@ function simulateStudents() {
     };
     students.push(student);
 
-    // Add marker
     const marker = L.circleMarker([lat, lon], {
       radius: 4,
       fillColor: "#3b82f6",
@@ -287,8 +325,7 @@ function simulateStudents() {
   );
 }
 
-// ==================== ALLOTMENT ====================
-
+// Allotment
 async function runAllotment() {
   if (!graphBuilt) {
     alert("Please build the graph first!");
@@ -300,7 +337,7 @@ async function runAllotment() {
     return;
   }
 
-  showLoader("Running batch greedy allotment...");
+  showLoader("Running batch greedy allotment");
 
   try {
     const payload = {
@@ -321,12 +358,11 @@ async function runAllotment() {
 
     if (data.status === "success") {
       assignments = data.assignments;
-      debugDistances = data.debug_distances; // <-- STORE THE NEW DATA
+      debugDistances = data.debug_distances;
       visualizeAssignments();
 
       const assignedCount = Object.keys(assignments).length;
 
-      // v3.0: Update timing metrics in sidebar
       if (data.timing) {
         document.getElementById("statAllotmentTime").textContent =
           data.timing.total_ms +
@@ -336,10 +372,9 @@ async function runAllotment() {
           data.timing.allotment_ms +
           "ms)";
 
-        console.log("📊 v3.0 Allotment Timing:", data.timing);
+        console.log("Allotment timing:", data.timing);
       }
 
-      // Enable export diagnostics button
       document.getElementById("exportDiagnosticsBtn").disabled = false;
 
       hideLoader();
@@ -358,29 +393,26 @@ async function runAllotment() {
   }
 }
 
-// ==================== VISUALIZATION ====================
+//Visualisation
 
 function visualizeAssignments() {
-  // Create a map of centre_id to color
   const centreColorMap = {};
   centres.forEach((centre, index) => {
     centreColorMap[centre.centre_id] =
       centreColors[index % centreColors.length];
   });
 
-  // Update student markers based on assignments
   students.forEach((student, index) => {
     const assignedCentreId = assignments[student.student_id];
     const studentDistances = debugDistances[student.student_id] || {}; // Get this student's debug data
 
-    let markerColor = "#6b7280"; // Default: grey (unassigned)
+    let markerColor = "#6b7280";
     let popupContent = `
       <strong>${student.student_id}</strong><br>
       Category: ${student.category}<br>
     `;
 
     if (assignedCentreId) {
-      // This student was assigned
       markerColor = centreColorMap[assignedCentreId];
       popupContent += `
         <strong>Status: <span style="color:${markerColor};">Assigned to ${assignedCentreId}</span></strong><br>
@@ -390,7 +422,6 @@ function visualizeAssignments() {
       popupContent += "<strong>Status: Unassigned</strong>";
     }
 
-    // --- NEW DEBUG TABLE ---
     let debugTable = `
       <hr style="margin: 5px 0;">
       <strong>Debug Info (Travel Time):</strong>
@@ -401,9 +432,8 @@ function visualizeAssignments() {
       const time = studentDistances[centre.centre_id];
       const color = centreColors[i % centreColors.length];
 
-      let timeText = "N/A"; // Default if not found
+      let timeText = "N/A";
       if (time === Infinity || (time && time > 9000000)) {
-        // Check for 'infinity'
         timeText = "<strong>Unreachable</strong>";
       } else if (time != null) {
         timeText = `${(time / 60).toFixed(1)} min (${time.toFixed(0)}s)`; // Show minutes and seconds
@@ -418,16 +448,13 @@ function visualizeAssignments() {
     });
     debugTable += "</table>";
     popupContent += debugTable;
-    // --- END DEBUG TABLE ---
 
-    // Update marker style
     studentMarkers[index].setStyle({
       fillColor: markerColor,
       fillOpacity: 0.9,
       radius: 5,
     });
 
-    // Update popup content
     studentMarkers[index].bindPopup(popupContent);
   });
 
@@ -435,7 +462,6 @@ function visualizeAssignments() {
 }
 
 async function showPath(studentId, centreId) {
-  // Find student and centre
   const student = students.find((s) => s.student_id === studentId);
   const centre = centres.find((c) => c.centre_id === centreId);
 
@@ -447,8 +473,6 @@ async function showPath(studentId, centreId) {
   showLoader("Finding optimal path...");
 
   try {
-    // We need to pass the snapped node IDs - for simplicity, we'll use a workaround
-    // In production, you'd store these after the allotment response
     const response = await fetch(
       `${API_BASE_URL}/get-path?student_lat=${student.lat}&student_lon=${student.lon}&centre_lat=${centre.lat}&centre_lon=${centre.lon}`
     );
@@ -460,13 +484,11 @@ async function showPath(studentId, centreId) {
     console.log("Path data:", data.path);
 
     if (data.status === "success" && data.path && data.path.length > 0) {
-      // Clear previous paths
       pathLayers.forEach((layer) => map.removeLayer(layer));
       pathLayers = [];
 
       console.log("Drawing path with", data.path.length, "points");
 
-      // Draw path
       const pathLine = L.polyline(data.path, {
         color: "#f59e0b",
         weight: 4,
@@ -476,15 +498,13 @@ async function showPath(studentId, centreId) {
 
       pathLayers.push(pathLine);
 
-      // Fit map to path
       map.fitBounds(pathLine.getBounds());
 
-      // v3.0: Update timing metrics in sidebar
       if (data.timing) {
         document.getElementById("statAStarTime").textContent =
           data.timing.astar_ms + " ms";
 
-        console.log("📊 v3.0 A* Timing:", data.timing);
+        console.log("A* timing:", data.timing);
       }
 
       hideLoader();
@@ -504,7 +524,7 @@ async function showPath(studentId, centreId) {
   }
 }
 
-// ==================== UI HELPERS ====================
+//UI
 
 function updateStats() {
   document.getElementById("statCentres").textContent = centres.length;
@@ -512,7 +532,6 @@ function updateStats() {
   document.getElementById("statAssigned").textContent =
     Object.keys(assignments).length;
 
-  // Count students by category
   let pwdCount = 0;
   let femaleCount = 0;
   let maleCount = 0;
@@ -599,7 +618,7 @@ async function exportDiagnostics() {
     window.URL.revokeObjectURL(url);
 
     hideLoader();
-    console.log(`✅ Diagnostic report exported: ${filename}`);
+    console.log(`Diagnostic report exported: ${filename}`);
   } catch (error) {
     alert(`Export failed: ${error.message}`);
     hideLoader();
@@ -607,7 +626,7 @@ async function exportDiagnostics() {
   }
 }
 
-// ==================== PARALLEL DIJKSTRA TEST ====================
+//Parallel Dijkstra
 
 async function testParallelDijkstra() {
   const btn = document.getElementById("testParallelBtn");
@@ -624,7 +643,7 @@ async function testParallelDijkstra() {
   }
 
   btn.disabled = true;
-  btn.textContent = "⏳ Running Parallel Dijkstra...";
+  btn.textContent = "Running Parallel Dijkstra";
   resultsDiv.innerHTML =
     '<div style="color: #666;">Computing shortest paths from all centres...</div>';
 
@@ -658,7 +677,7 @@ async function testParallelDijkstra() {
       let resultsHTML = `
         <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin-top: 10px;">
           <div style="font-weight: bold; color: #155724; margin-bottom: 10px;">
-            ✅ Parallel Dijkstra Completed Successfully!
+            Parallel Dijkstra Completed Successfully!
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12px;">
             <div>
@@ -670,13 +689,13 @@ async function testParallelDijkstra() {
       }
             </div>
             <div>
-              <strong>⚡ Parallel Time:</strong> <span style="color: #28a745; font-weight: bold;">${parallelTime}ms</span>
+              <strong>Parallel Time:</strong> <span style="color: #28a745; font-weight: bold;">${parallelTime}ms</span>
             </div>
             <div>
               <strong>Sequential Est.:</strong> ${estimatedSeqTime}ms
             </div>
             <div>
-              <strong>🚀 Speedup:</strong> <span style="color: #dc3545; font-weight: bold;">${speedup.toFixed(
+              <strong>Speedup:</strong> <span style="color: #dc3545; font-weight: bold;">${speedup.toFixed(
                 2
               )}x faster</span>
             </div>
@@ -712,11 +731,11 @@ async function testParallelDijkstra() {
 
       resultsDiv.innerHTML = resultsHTML;
 
-      console.log("✅ Parallel Dijkstra Test Results:", data);
+      console.log("Parallel Dijkstra Test Results:", data);
     } else {
       resultsDiv.innerHTML = `
         <div style="background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 15px; color: #721c24;">
-          ❌ Error: ${data.message || "Unknown error"}
+          Error: ${data.message || "Unknown error"}
         </div>
       `;
     }
@@ -724,17 +743,17 @@ async function testParallelDijkstra() {
     console.error("Parallel Dijkstra test error:", error);
     resultsDiv.innerHTML = `
       <div style="background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 15px; color: #721c24;">
-        ❌ Network Error: ${error.message}
+        Network Error: ${error.message}
         <br><small>Make sure the backend server is running on port 8080</small>
       </div>
     `;
   } finally {
     btn.disabled = false;
-    btn.textContent = "🚀 Test Parallel Dijkstra";
+    btn.textContent = "Test Parallel Dijkstra";
   }
 }
 
-// ==================== INITIALIZE ====================
+//Initialization
 
 window.addEventListener("DOMContentLoaded", () => {
   initMap();
@@ -742,7 +761,7 @@ window.addEventListener("DOMContentLoaded", () => {
   console.log("Application initialized");
 });
 
-// Make functions globally accessible
+//global functions
 window.addCentre = addCentre;
 window.clearCentres = clearCentres;
 window.buildGraph = buildGraph;
@@ -751,3 +770,5 @@ window.runAllotment = runAllotment;
 window.showPath = showPath;
 window.exportDiagnostics = exportDiagnostics;
 window.testParallelDijkstra = testParallelDijkstra;
+window.updateSelectCentresButton = updateSelectCentresButton;
+window.enableCentreSelection = enableCentreSelection;

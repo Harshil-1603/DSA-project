@@ -20,7 +20,7 @@
 
       body {
         font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #f0f4f8;
         height: 100vh;
         display: flex;
         flex-direction: column;
@@ -76,7 +76,7 @@
       }
 
       .section {
-        margin-bottom: 25px;
+        margin-bottom: 20px;
       }
 
       .section-title {
@@ -84,8 +84,8 @@
         font-weight: 600;
         color: #333;
         margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #667eea;
+        padding-bottom: 0px;
+        border-bottom: none;
       }
 
       .btn {
@@ -261,12 +261,11 @@
       }
 
       .info-box {
-        background: #fef3c7;
-        border-left: 4px solid #f59e0b;
+        background: #e0f2fe;
         padding: 12px;
         border-radius: 6px;
         font-size: 13px;
-        color: #92400e;
+        color: #0c4a6e;
         margin-bottom: 15px;
       }
     </style>
@@ -283,16 +282,40 @@
       <div class="control-panel">
         <div class="section">
           <div class="section-title">Step 1: Setup Centres</div>
-          <div class="info-box">Click on the map to add test centres</div>
           <div class="input-group">
             <label>Centre Capacity:</label>
-            <input type="number" id="centreCapacity" value="50" min="1" />
+            <input
+              type="number"
+              id="centreCapacity"
+              value="50"
+              min="1"
+              oninput="updateSelectCentresButton()"
+            />
           </div>
-          <div class="info-box" style="font-size: 12px; margin-top: 10px">
-            ℹAll centres are identical. Students are assigned based on distance
-            and priority tier (Female > PwD > Male).
+          <button
+            class="btn btn-primary"
+            id="selectCentresBtn"
+            onclick="enableCentreSelection()"
+            disabled
+          >
+            Select Centres on Map
+          </button>
+          <div
+            class="info-box"
+            style="margin-top: 10px"
+            id="centreSelectionInfo"
+            hidden
+          >
+            Click on the map to add test centres. All centres are identical.
+            Students are assigned based on distance and priority tier (Male >
+            PwD > Female).
           </div>
-          <button class="btn btn-secondary" onclick="clearCentres()">
+          <button
+            class="btn btn-secondary"
+            onclick="clearCentres()"
+            id="clearCentresBtn"
+            disabled
+          >
             Clear All Centres
           </button>
         </div>
@@ -317,9 +340,9 @@
               <option value="high">High (Accurate - All roads)</option>
             </select>
           </div>
-          <div class="info-box" style="font-size: 11px; margin-top: 8px">
-            Lower detail = faster graph building & allotment, but less accurate
-            routes
+          <div class="info-box" style="margin-top: 8px">
+            Lower detail means faster graph building & allotment, but less
+            accurate routes
           </div>
           <button
             class="btn btn-primary"
@@ -336,7 +359,7 @@
             <label>Number of Students:</label>
             <input type="number" id="studentCount" value="100" min="1" />
           </div>
-          <div class="info-box" style="font-size: 12px; margin-top: 10px">
+          <div class="info-box" style="margin-top: 10px">
             Students will be automatically distributed in a circle around your
             test centres.
           </div>
@@ -368,16 +391,9 @@
 
         <div class="section">
           <div class="section-title">
-            ⚡ Performance Test: Parallel Dijkstra
+            Performance Test for Parallel Dijkstra
           </div>
-          <div
-            class="info-box"
-            style="
-              font-size: 12px;
-              background: #fff3cd;
-              border-left-color: #ffc107;
-            "
-          >
+          <div class="info-box">
             Test parallel Dijkstra computation from all centres. Compare
             sequential vs parallel execution times.
           </div>
@@ -390,7 +406,7 @@
               background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             "
           >
-            🚀 Test Parallel Dijkstra
+            Test Parallel Dijkstra
           </button>
           <div
             id="parallelResults"
@@ -439,7 +455,7 @@
         </div>
 
         <div class="section">
-          <div class="section-title">Performance Analytics:</div>
+          <div class="section-title">Algorithm Analytics:</div>
           <div class="stats">
             <div class="stat-item">
               <span class="stat-label">Fetch OSM:</span>
