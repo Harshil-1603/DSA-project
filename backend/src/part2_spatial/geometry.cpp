@@ -2,6 +2,11 @@
 
 #include <cmath>
 
+//for building with x64 mingw
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 namespace route_finder
 {
 

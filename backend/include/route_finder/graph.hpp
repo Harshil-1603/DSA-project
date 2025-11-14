@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "external/json_single.hpp"
+#include "json_single.hpp"
 #include "types.hpp"
 
 namespace route_finder
